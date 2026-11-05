@@ -23,6 +23,9 @@ jobs:
       GOARCH: amd64
       CGO_ENABLED: '0'
     steps:
+      # gofmt expects LF; Windows runners otherwise check out files with CRLF.
+      - name: Preserve repository line endings
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
