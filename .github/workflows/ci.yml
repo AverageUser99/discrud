@@ -9,9 +9,46 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/master' }}
+
 jobs:
+  lint:
+    name: Lint and compile (Windows amd64)
+    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    steps:
+      # gofmt expects LF; Windows runners otherwise check out files with CRLF.
+      - name: Preserve repository line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check Go formatting
+        shell: pwsh
+        run: |
+          $unformatted = @(gofmt -l cmd internal)
+          if ($unformatted.Count -gt 0) {
+            $unformatted | ForEach-Object { Write-Output $_ }
+            throw 'Run gofmt on the files listed above.'
+          }
+      - name: Compile packages and tests without running tests
+        run: go test -vet=off -run '^$' ./...
+      - name: Vet backend packages
+        run: go vet ./internal/discord ./internal/storage ./internal/presentation ./internal/demo ./internal/netdebug ./internal/gifplayer ./internal/gifsource
+      - name: Vet native packages
+        run: go vet -unsafeptr=false ./internal/ui ./internal/nativevideo ./cmd/discrud
+
   test:
     name: Test (Windows amd64)
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: windows-latest
     env:
       GOOS: windows
