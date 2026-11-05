@@ -77,6 +77,7 @@ jobs:
           git ls-remote --exit-code --tags origin "refs/tags/v$version"
           if ($LASTEXITCODE -eq 0) { throw "Tag v$version already exists; update ClientVersion before merging." }
           if ($LASTEXITCODE -ne 2) { throw 'Could not check existing release tags.' }
+          $global:LASTEXITCODE = 0 # A missing tag is the expected successful outcome.
           "version=$version" >> $env:GITHUB_OUTPUT
       - name: Run tests and vet
         run: python scripts/build.py --test
