@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Windows amd64)
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Run tests and vet
+        run: python scripts/build.py --test
+
+  build:
+    name: Build Windows amd64 artifact
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: test
+    runs-on: windows-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build executable and notices
+        run: python scripts/build.py
+      - name: Prepare SemVer build artifact
+        id: version
+        shell: pwsh
+        run: |
+          $identity = Get-Content internal/discord/identity.go -Raw
+          if ($identity -notmatch 'const ClientVersion = "(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"') {
+            throw 'ClientVersion must be a stable MAJOR.MINOR.PATCH version.'
+          }
+          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])-ci.${{ github.run_number }}.${{ github.run_attempt }}"
+          Copy-Item dist/discrud.exe "dist/discrud-$version-windows-amd64.exe"
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discrud-${{ steps.version.outputs.version }}-windows-amd64
+          path: |
+            dist/discrud-${{ steps.version.outputs.version }}-windows-amd64.exe
+            dist/THIRD_PARTY_NOTICES.txt
+          if-no-files-found: error
