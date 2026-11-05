@@ -50,6 +50,8 @@ jobs:
     name: Test (Windows amd64)
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     env:
       GOOS: windows
       GOARCH: amd64
@@ -63,6 +65,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Validate release version
+        id: version
+        shell: pwsh
+        run: |
+          $identity = Get-Content internal/discord/identity.go -Raw
+          if ($identity -notmatch '(?m)^const ClientVersion = "(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"\s*$') {
+            throw 'ClientVersion must be a stable MAJOR.MINOR.PATCH version.'
+          }
+          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          git ls-remote --exit-code --tags origin "refs/tags/v$version"
+          if ($LASTEXITCODE -eq 0) { throw "Tag v$version already exists; update ClientVersion before merging." }
+          if ($LASTEXITCODE -ne 2) { throw 'Could not check existing release tags.' }
+          $global:LASTEXITCODE = 0 # A missing tag is the expected successful outcome.
+          "version=$version" >> $env:GITHUB_OUTPUT
       - name: Run tests and vet
         run: python scripts/build.py --test
 
@@ -71,6 +87,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write
     env:
       GOOS: windows
       GOARCH: amd64
@@ -86,21 +104,16 @@ jobs:
           python-version: '3.x'
       - name: Build executable and notices
         run: python scripts/build.py
-      - name: Prepare SemVer build artifact
-        id: version
+      - name: Package release
         shell: pwsh
         run: |
-          $identity = Get-Content internal/discord/identity.go -Raw
-          if ($identity -notmatch 'const ClientVersion = "(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"') {
-            throw 'ClientVersion must be a stable MAJOR.MINOR.PATCH version.'
-          }
-          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])-ci.${{ github.run_number }}.${{ github.run_attempt }}"
-          Copy-Item dist/discrud.exe "dist/discrud-$version-windows-amd64.exe"
-          "version=$version" >> $env:GITHUB_OUTPUT
+          Compress-Archive -Path dist/discrud.exe,dist/Demo.cmd,dist/THIRD_PARTY_NOTICES.txt -DestinationPath "dist/discrud-v${{ needs.test.outputs.version }}-windows-amd64.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: discrud-${{ steps.version.outputs.version }}-windows-amd64
-          path: |
-            dist/discrud-${{ steps.version.outputs.version }}-windows-amd64.exe
-            dist/THIRD_PARTY_NOTICES.txt
+          name: discrud-v${{ needs.test.outputs.version }}-windows-amd64
+          path: dist/discrud-v${{ needs.test.outputs.version }}-windows-amd64.zip
           if-no-files-found: error
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ needs.test.outputs.version }}" "dist/discrud-v${{ needs.test.outputs.version }}-windows-amd64.zip" --target "${{ github.sha }}" --title "Discrud v${{ needs.test.outputs.version }}" --generate-notes

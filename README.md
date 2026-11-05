@@ -135,6 +135,10 @@ python scripts/benchmark.py
 
 Output: `dist/discrud.exe`, `dist/Demo.cmd`, and third-party license notices.
 
+### Releases
+
+Every merge to `master` that passes CI publishes a GitHub release with a Windows amd64 ZIP containing the executable, demo launcher, and license notices. Before each merge, set `ClientVersion` in `internal/discord/identity.go` to a new stable SemVer version (`MAJOR.MINOR.PATCH`); CI rejects a version whose `v`-prefixed Git tag already exists. Choose major, minor, and patch changes according to the release's compatibility and scope. The release is tagged at the tested merge commit.
+
 ```powershell
 # Optional race detection requires a compatible C compiler.
 .\.tools\go\bin\go.exe test -race ./...
