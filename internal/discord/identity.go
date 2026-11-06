@@ -7,7 +7,9 @@ import (
 	"fmt"
 )
 
-const ClientVersion = "0.1.2"
+// ClientVersion is populated by scripts/build.py using -ldflags -X.
+// Direct go builds remain visibly unversioned rather than claiming an old release.
+var ClientVersion = "0.0.0-dev"
 
 // Browser compatibility profile supplied from the web app. These versions are
 // pinned metadata, not the application's runtime or an automatically current build.

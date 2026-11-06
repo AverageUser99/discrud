@@ -5,13 +5,21 @@ import os
 import pathlib
 import shutil
 import subprocess
+import tempfile
+
+from version import parse_tag, resolve_version
 
 root = pathlib.Path(__file__).resolve().parent.parent
 os.chdir(root)
 parser = argparse.ArgumentParser()
 parser.add_argument("--test", action="store_true")
 parser.add_argument("--debug", action="store_true")
+parser.add_argument("--version", help="Stable release version (default: derived from Git tags)")
 args = parser.parse_args()
+version = args.version or resolve_version()
+if parse_tag("v" + version) is None:
+    parser.error("--version must be a stable MAJOR.MINOR.PATCH version")
+print("Build version:", version, flush=True)
 local = root / ".tools" / "go" / "bin" / "go.exe"
 go = str(local) if local.exists() else shutil.which("go")
 if not go:
@@ -23,15 +31,23 @@ def run(*command):
 
 run(go, "fmt", "./...")
 run(go, "mod", "tidy")
-run(go, "run", "github.com/akavel/rsrc@v0.10.2", "-manifest", "packaging/app.manifest",
-    "-arch", "amd64", "-o", "cmd/discrud/rsrc_windows_amd64.syso")
+# Keep the assembly identity consistent without modifying the checked-in manifest.
+manifest = (root / "packaging" / "app.manifest").read_text(encoding="utf-8")
+manifest = manifest.replace('assemblyIdentity version="0.1.0.0"', f'assemblyIdentity version="{version}.0"', 1)
+with tempfile.TemporaryDirectory() as temporary:
+    manifest_path = pathlib.Path(temporary) / "app.manifest"
+    manifest_path.write_text(manifest, encoding="utf-8")
+    run(go, "run", "github.com/akavel/rsrc@v0.10.2", "-manifest", str(manifest_path),
+        "-arch", "amd64", "-o", "cmd/discrud/rsrc_windows_amd64.syso")
 if args.test:
     run(go, "test", "./...")
     run(go, "vet", "./internal/discord", "./internal/storage", "./internal/presentation", "./internal/demo", "./internal/netdebug", "./internal/gifplayer", "./internal/gifsource")
     # RichEdit callbacks and COM vtables receive native, non-Go pointers.
     run(go, "vet", "-unsafeptr=false", "./internal/ui", "./internal/nativevideo", "./cmd/discrud")
 (root / "dist").mkdir(exist_ok=True)
-flags = "" if args.debug else "-s -w -H=windowsgui"
+flags = f"-X discrud/internal/discord.ClientVersion={version}"
+if not args.debug:
+    flags += " -s -w -H=windowsgui"
 run(go, "build", "-trimpath", "-ldflags", flags, "-o", "dist/discrud.exe", "./cmd/discrud")
 (root / "dist" / "Demo.cmd").write_text('@echo off\ncd /d "%~dp0"\nstart "" discrud.exe --demo\n')
 # Binary redistribution notices; development toolchain/build tool are not shipped.
