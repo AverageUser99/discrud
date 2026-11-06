@@ -20,7 +20,6 @@ import (
 )
 
 const APIBase = "https://discord.com/api/v9"
-const UserAgent = "Discrud/" + ClientVersion + " (personal unofficial Windows chat client)"
 const MaxUploadBytes = 10 * 1024 * 1024 // Conservative MVP cap, not an entitlement claim.
 const maxResponse = 16 * 1024 * 1024
 
@@ -64,6 +63,9 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("X-Discord-Locale", "en-US")
+	if zone := systemTimezone(); zone != "" {
+		req.Header.Set("X-Discord-Timezone", zone)
+	}
 	req.Header.Set("X-Super-Properties", superProperties())
 	if c.token == "" {
 		req.Header.Set("Referer", "https://discord.com/login")
