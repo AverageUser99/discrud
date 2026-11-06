@@ -116,7 +116,7 @@ A console is attached/opened and the same output is written to `discrud-network-
 
 ### HTTP identity
 
-API requests use `User-Agent: Discrud/<version> (personal unofficial Windows chat client)`. `X-Super-Properties` is base64-encoded Discrud/OS/version metadata, not a Chrome or official Discord build identity. JSON Accept/Content-Type and English locale headers describe the request; Origin/Referer use Discord URLs for protocol compatibility. WebSocket handshakes use the Discrud User-Agent and Discord Origin; media downloads also identify as Discrud and never receive the account Authorization header.
+API requests use a pinned Windows Firefox 159.0 compatibility User-Agent and matching base64-encoded `X-Super-Properties` web profile (stable build 663810). These are supplied compatibility metadata, not the actual Go runtime or automatically updated browser/build versions. Launch/signature/heartbeat IDs are generated once per application process rather than replayed from a captured session; the supplied referrer fields and `unfocused` app state are fixed profile values, not live navigation/focus tracking. REST and Gateway Identify share the properties; WebSocket handshakes and media downloads share the User-Agent. `X-Discord-Timezone` is derived from the system's configured Windows timezone using CLDR world-default IANA mappings; an unknown zone is omitted rather than guessed. JSON Accept/Content-Type and English locale headers describe the request; Origin/Referer use Discord URLs for protocol compatibility. Media downloads never receive the account Authorization header.
 
 These headers are valid HTTP metadata, **not** evidence that Discord supports this client or grants official user-account API access. The user-token and QR flows remain unofficial; verification/challenges and account restrictions are possible.
 
@@ -137,9 +137,11 @@ Output: `dist/discrud.exe`, `dist/Demo.cmd`, and third-party license notices.
 
 ### Releases
 
-Merges to `master` that change Go source publish a GitHub release with a Windows amd64 ZIP containing the executable, demo launcher, and license notices. Before merging Go changes, set `ClientVersion` in `internal/discord/identity.go` to a new stable SemVer version (`MAJOR.MINOR.PATCH`); CI rejects a version whose `v`-prefixed Git tag already exists. Choose major, minor, and patch changes according to the release's compatibility and scope. Documentation-only and Python-only changes do not trigger a release. The release is tagged at the merge commit.
+Merges to `master` that change Go source, module files, packaging, the build/version scripts, or the CI workflow publish a GitHub release with a Windows amd64 ZIP containing the executable, demo launcher, and license notices. Versioning is automatic: `scripts/version.py` selects the next patch after the highest stable `vMAJOR.MINOR.PATCH` Git tag. Rebuilding an already-tagged commit preserves its version, and CI retries leave existing releases unchanged. CI fetches full history/tags and tags the release at the merge commit; PR versions are previews and may change when other PRs merge first. No source version bump is needed. Documentation-only and unrelated Python changes do not trigger a release.
 
-CI runs Go tests on pull requests that change Go source, and Python lint checks when Python files change. Feature-branch pushes run the applicable lint and compilation checks. After a merge, CI builds a release only for Go source changes and does not rerun the PR test suite.
+`scripts/build.py` uses the same resolver locally (fetch tags first for the latest version), or accepts `--version MAJOR.MINOR.PATCH`. It embeds the version in the application's UI via Go linker flags and in the Windows assembly manifest. Direct `go build` uses `0.0.0-dev`. The pinned Discord browser/build compatibility profile is independent of the application release version.
+
+CI runs Go tests on pull requests that change build inputs, version-selection regression tests when Go/build inputs or Python change, and Python lint checks when Python files change. Feature-branch pushes run the applicable lint and compilation checks. After a merge, CI builds a release for changed build inputs and does not rerun the Go PR test suite.
 
 ```powershell
 # Optional race detection requires a compatible C compiler.

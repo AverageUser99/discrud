@@ -5,3 +5,5 @@ dist/
 *.test
 *.out
 .discrud-*
+__pycache__/
+*.py[cod]

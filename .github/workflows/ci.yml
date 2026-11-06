@@ -31,6 +31,13 @@ jobs:
           filters: |
             go:
               - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'packaging/**'
+              - 'scripts/build.py'
+              - 'scripts/version.py'
+              - 'scripts/test_version.py'
+              - '.github/workflows/ci.yml'
             python:
               - '**/*.py'
 
@@ -95,33 +102,27 @@ jobs:
       CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         if: github.event_name == 'pull_request' && needs.changes.outputs.go == 'true'
         with:
           go-version-file: go.mod
           cache: true
       - uses: actions/setup-python@v5
-        if: github.event_name == 'pull_request' && (needs.changes.outputs.go == 'true' || needs.changes.outputs.python == 'true')
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.python == 'true'
         with:
           python-version: '3.x'
-      - name: Validate release version
+      - name: Resolve automatic release version
         if: needs.changes.outputs.go == 'true'
         id: version
-        shell: pwsh
-        run: |
-          $identity = Get-Content internal/discord/identity.go -Raw
-          if ($identity -notmatch '(?m)^const ClientVersion = "(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"\s*$') {
-            throw 'ClientVersion must be a stable MAJOR.MINOR.PATCH version.'
-          }
-          $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
-          git ls-remote --exit-code --tags origin "refs/tags/v$version"
-          if ($LASTEXITCODE -eq 0) { throw "Tag v$version already exists; update ClientVersion before merging." }
-          if ($LASTEXITCODE -ne 2) { throw 'Could not check existing release tags.' }
-          $global:LASTEXITCODE = 0
-          "version=$version" >> $env:GITHUB_OUTPUT
+        run: python scripts/version.py --github-output
+      - name: Test automatic versioning
+        if: needs.changes.outputs.go == 'true' || needs.changes.outputs.python == 'true'
+        run: python -m unittest discover -s scripts -p test_version.py -v
       - name: Run Go tests and vet
         if: github.event_name == 'pull_request' && needs.changes.outputs.go == 'true'
-        run: python scripts/build.py --test
+        run: python scripts/build.py --test --version "${{ steps.version.outputs.version }}"
       - name: Lint Python
         if: github.event_name == 'pull_request' && needs.changes.outputs.python == 'true'
         run: |
@@ -149,7 +150,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Build executable and notices
-        run: python scripts/build.py
+        run: python scripts/build.py --version "${{ needs.test.outputs.version }}"
       - name: Package release
         shell: pwsh
         run: |
@@ -162,4 +163,12 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v${{ needs.test.outputs.version }}" "dist/discrud-v${{ needs.test.outputs.version }}-windows-amd64.zip" --target "${{ github.sha }}" --title "Discrud v${{ needs.test.outputs.version }}" --generate-notes
+        shell: pwsh
+        run: |
+          $tag = "v${{ needs.test.outputs.version }}"
+          gh release view $tag --json tagName
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "Release $tag already exists; leaving the published release unchanged."
+            exit 0
+          }
+          gh release create $tag "dist/discrud-$tag-windows-amd64.zip" --target "${{ github.sha }}" --title "Discrud $tag" --generate-notes
